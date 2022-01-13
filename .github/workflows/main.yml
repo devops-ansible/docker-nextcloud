@@ -1,0 +1,97 @@
+---
+
+name: Build Docker images for NextCloud
+
+on:
+  workflow_dispatch:
+  push:
+  schedule:
+    - cron: '11 23 * * 0'
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Checkout DevOpsAnsibleDE NextCloud Repo
+        uses: actions/checkout@v2
+        with:
+          ref: master
+          path: nextcloud
+
+      - name: Checkout official NextCloud Repo
+        uses: actions/checkout@v2
+        with:
+          ref: master
+          path: official
+          repository: nextcloud/docker
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Build and push latest
+        id: docker_build_latest
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: devopsansiblede/nextcloud:latest
+          no-cache: true
+          context: ./nextcloud/
+          file: ./nextcloud/Dockerfile
+          platforms: linux/amd64,linux/arm64
+
+      - name: Image digest for latest image
+        run: echo ${{ steps.docker_build_latest.outputs.digest }}
+
+      - name: Build preparing full image
+        id: docker_build_prepare_full
+        uses: docker/build-push-action@v2
+        with:
+          push: false
+          tags: devopsansiblede/nextcloud:prepare
+          no-cache: true
+          context: ./official/.examples/dockerfiles/full/apache/
+          file: ./official/.examples/dockerfiles/full/apache/Dockerfile
+          platforms: linux/amd64,linux/arm64
+
+      - name: Image digest for full preparing image
+        run: echo ${{ steps.docker_build_prepare_full.outputs.digest }}
+
+      - name: Build and push full
+        id: docker_build_full
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: devopsansiblede/nextcloud:full
+          no-cache: true
+          context: ./nextcloud/
+          file: ./nextcloud/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            "IMAGE=devopsansiblede/nextcloud"
+            "VERSION=prepare"
+
+      - name: Image digest for full image
+        run: echo ${{ steps.docker_build_full.outputs.digest }}
+
+      - name: Last Built Date
+        run: sed -i -E "s/^[0-9]{4}-[0-9]{2}-[0-9]{2}\s+[0-9]{2}:[0-9]{2}:[0-9]{2}$/$( date +"%Y-%m-%d %T" )/" ./nextcloud/README.md
+
+      - name: Commit last built
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: Last built
+          commit_user_name: GitHub Actions
+          commit_user_email: dev@macwinnie.me
+          repository: ./nextcloud/
+
+...
