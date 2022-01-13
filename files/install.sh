@@ -20,22 +20,6 @@ rm -r /var/lib/apt/lists/*
 
 # prepare entrypoint
 entrypoint_path="/usr/local/bin/entrypoint"
-cat <<'EOF' > ${entrypoint_path}
-#!/usr/bin/env bash
-
-# run official entrypoint – it needs at least a parameter 1 ...
-/entrypoint.sh echo 'NextCloud entrypoint done, continuing with bootup scripts ...'
-
-# run bootup scripts
-/boot.sh
-
-# if given CMD is `start` do NextCloud startup
-if [ "$1" == "start" ]; then
-    {{ STARTUP_COMMAND }}
-else
-    exec "$@"
-fi
-EOF
 
 which supervisord
 if [ $? -eq 0 ]; then
