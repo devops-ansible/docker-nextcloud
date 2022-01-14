@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
 
-apache-start () {
-    echo 'NextCloud entrypoint done, continuing with bootup scripts ...'
-}
-
 # run official entrypoint – it needs at least a parameter 1 ...
-/entrypoint.sh apache-start
+/entrypoint.sh apache-nextcloud-entrypoint-done
 
 # run bootup scripts
 /boot.sh

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+echo 'NextCloud entrypoint done, continuing with bootup scripts ...'
