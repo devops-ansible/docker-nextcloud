@@ -3,7 +3,7 @@
 check=$( sudo -u ${NC_USER} php -d memory_limit=-1 ${NC_BASE_PATH}/occ -V )
 check=$( echo ${check} | sed 's/./\L&/g' )
 
-if [[ ${check} =~ "not installed" ]]; then
+if [[ ! ${check} =~ "not installed" ]]; then
     sudo -u ${NC_USER} php -d memory_limit=-1 ${NC_BASE_PATH}/occ upgrade
     sudo -u ${NC_USER} php -d memory_limit=-1 ${NC_BASE_PATH}/occ db:add-missing-indices
     sudo -u ${NC_USER} php -d memory_limit=-1 ${NC_BASE_PATH}/occ maintenance:update:htaccess
