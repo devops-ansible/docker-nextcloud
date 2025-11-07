@@ -8,7 +8,7 @@ rm -rf /_usr_local_bin
 # upgrade and install applets and services
 apt-get update -q --fix-missing
 apt-get -yq install --no-install-recommends \
-        software-properties-common procps apt-utils \
+        procps apt-utils \
         sudo
 apt-get -yq upgrade
 
@@ -31,7 +31,6 @@ else
     # no supervisord is installed, so write out
     # entrypoint for simply starting Apache2
     sed -i 's/{{ STARTUP_COMMAND }}/apache2-foreground/g' ${entrypoint_path}
-EOF
 fi
 
 chmod a+x /usr/local/bin/entrypoint

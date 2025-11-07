@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# build config file
+php /boot.d/nextcloud/nc_config.php "${NC_BASE_PATH}/config/config.php"
+
 # run official entrypoint – it needs at least a parameter 1 ...
 /entrypoint.sh apache-nextcloud-entrypoint-done
 
