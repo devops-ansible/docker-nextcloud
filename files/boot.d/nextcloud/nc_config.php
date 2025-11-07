@@ -75,7 +75,7 @@ function parse_nc_env_value(string $raw) {
     return $raw;
 }
 
-/** Apply NC_* env vars */
+/** Apply NC_D_* env vars */
 $env = getenv();
 if (!is_array($env)) {
     fwrite(STDERR, "Could not read environment variables.\n");
@@ -83,12 +83,12 @@ if (!is_array($env)) {
 }
 
 foreach ($env as $name => $value) {
-    if (strpos($name, 'NC_') !== 0) continue;
+    if (strpos($name, 'NC_D_') !== 0) continue;
 
     // Skip control vars
-    if (in_array($name, ["NC_APPS", "NC_USER", "NC_BASE_PATH"])) continue;
+    if (in_array($name, ["NC_D_APPS", "NC_D_USER", "NC_D_BASE_PATH"])) continue;
 
-    $rest = substr($name, 3);
+    $rest = substr($name, 5);
     if ($rest === '' || $rest === false) continue;
 
     $key = str_replace('__', '.', $rest);

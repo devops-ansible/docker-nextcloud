@@ -20,9 +20,11 @@ NextCloud publishes some extended Dockerfile examples [with their Git repository
 
 | ENV Variable | Default Value | Description |
 | ------------ | ------------- | ----------- |
-| `NC_APPS`    | `calendar contacts` | List of applications to be checked for installed and enabled status on bootup – space separated! |
+| `NC_D_APPS`    | `calendar contacts` | List of applications to be checked for installed and enabled status on bootup – space separated! |
 | `DISABLE_CHOWN` | | set to `true`, if chown should be skipped at bootup |
 | `CHOWN_DEBUG` | | set to `true`, if chown should be run with debugging activated |
+
+You can additionally to `NC_D_APPS` use any key of the `$CONFIG` array of the NextCloud config file, prefix it by `NC_D_` and set a JSON string (or regular string) as value. If a dot `.` is separating the key name in `$CONFIG`, replace it by two underscores `__` in the NC writing (`htaccess.RewriteBase` becomes `NC_D_htaccess__RewriteBase`).
 
 There do exist more environmental variables – but those are not recommended to be changed at all.
 
