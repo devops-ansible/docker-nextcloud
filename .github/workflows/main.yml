@@ -1,5 +1,3 @@
----
-
 name: Build Docker images for NextCloud
 
 on:
@@ -14,67 +12,184 @@ jobs:
     steps:
 
       - name: Login to DockerHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Checkout DevOpsAnsibleDE NextCloud Repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: master
           path: nextcloud
 
       - name: Checkout official NextCloud Repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: master
           path: official
           repository: nextcloud/docker
 
-      - name: Patch libmagickcore package in Dockerfile
+      - name: Patch Nextcloud full Apache image
+        shell: bash
         run: |
-          file="./official/.examples/dockerfiles/full/apache/Dockerfile"
+          set -Eeuo pipefail
 
-          echo ">>> Replacing old libmagickcore package..."
-          sed -i -E 's/\blibmagickcore-6\.q16-6-extra\b/libmagickcore-7.q16-10-extra/g' "$file"
+          dockerfile="./official/.examples/dockerfiles/full/apache/Dockerfile"
+          supervisor="./official/.examples/dockerfiles/full/apache/supervisord.conf"
 
-          echo ">>> Creating insertion block..."
-          cat > /tmp/php_repo_block.txt <<'EOF'
-          RUN apt-get update && apt-get -y install --no-install-recommends apt-transport-https lsb-release ca-certificates curl \
-              && curl -fsSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/php.gpg \
-              && sh -c 'printf "Types: deb\nURIs: https://packages.sury.org/php/\nSuites: %s\nComponents: main\nSigned-By: /usr/share/keyrings/php.gpg\n" "$(lsb_release -sc)" > /etc/apt/sources.list.d/php.sources' \
-              && apt-get update
+          test -f "$dockerfile" || {
+            echo "::error file=$dockerfile::Dockerfile not found"
+            exit 1
+          }
+
+          test -f "$supervisor" || {
+            echo "::error file=$supervisor::supervisord.conf not found"
+            exit 1
+          }
+
+          echo ">>> Updating ImageMagick package"
+          sed -i \
+            's/libmagickcore-6\.q16-6-extra/libmagickcore-7.q16-10-extra/g' \
+            "$dockerfile"
+
+          echo ">>> Adding Sury repository after the first FROM instruction"
+
+          cat > /tmp/php-repository.txt <<'EOF'
+          RUN set -eux; \
+              apt-get update; \
+              apt-get install -y --no-install-recommends \
+                  ca-certificates \
+                  curl \
+              ; \
+              curl -fsSLo /tmp/debsuryorg-archive-keyring.deb \
+                  https://packages.sury.org/debsuryorg-archive-keyring.deb; \
+              dpkg -i /tmp/debsuryorg-archive-keyring.deb; \
+              echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ trixie main" \
+                  > /etc/apt/sources.list.d/php.list; \
+              rm -f /tmp/debsuryorg-archive-keyring.deb; \
+              apt-get update
           EOF
 
-          echo ">>> Inserting block after the first FROM line..."
           awk '
-            BEGIN { inserted=0 }
+            BEGIN {
+              inserted = 0
+            }
+
             /^FROM[[:space:]]/ && !inserted {
               print
-              while ((getline line < "/tmp/php_repo_block.txt") > 0) print line
-              close("/tmp/php_repo_block.txt")
-              inserted=1
+
+              while ((getline line < "/tmp/php-repository.txt") > 0) {
+                print line
+              }
+
+              close("/tmp/php-repository.txt")
+              inserted = 1
               next
             }
-            { print }
-          ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
 
-          echo ">>> Verifying changes..."
-          grep -q 'libmagickcore-7.q16-10-extra' "$file" || { echo "::error::Replacement failed"; exit 1; }
-          grep -q 'packages.sury.org/php' "$file" || { echo "::error::Insert block missing"; exit 1; }
+            {
+              print
+            }
+          ' "$dockerfile" > "${dockerfile}.tmp"
 
-          echo "OK: Dockerfile patched."
+          mv "${dockerfile}.tmp" "$dockerfile"
+
+          echo ">>> Replacing c-client development package"
+          sed -i \
+            's/libc-client-dev/libc-client2007e-dev/g' \
+            "$dockerfile"
+
+          echo ">>> Replacing bundled PHP IMAP build with PECL IMAP"
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("./official/.examples/dockerfiles/full/apache/Dockerfile")
+          text = path.read_text()
+
+          old = """\
+              docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \\
+              docker-php-ext-install \\
+                  bz2 \\
+                  imap \\
+              ; \\
+              pecl install smbclient; \\
+              docker-php-ext-enable smbclient; \\
+          """
+
+          new = """\
+              docker-php-ext-install \\
+                  bz2 \\
+              ; \\
+              pecl install \\
+                  imap \\
+                  smbclient \\
+              ; \\
+              docker-php-ext-enable \\
+                  imap \\
+                  smbclient \\
+              ; \\
+          """
+
+          if old not in text:
+              raise SystemExit(
+                  f"::error file={path}::Legacy IMAP block not found"
+              )
+
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          echo ">>> Patching supervisord.conf"
+
+          # Apply the exact supervisor version change you need here.
+          sed -i \
+            's|^command=/cron\.sh$|command=/usr/local/bin/php -f /var/www/html/cron.php|' \
+            "$supervisor"
+
+          echo ">>> Verifying Dockerfile"
+
+          grep -Fq 'libmagickcore-7.q16-10-extra' "$dockerfile" || {
+            echo "::error file=$dockerfile::ImageMagick package patch missing"
+            exit 1
+          }
+
+          grep -Fq 'packages.sury.org/php' "$dockerfile" || {
+            echo "::error file=$dockerfile::Sury repository missing"
+            exit 1
+          }
+
+          grep -Fq 'libc-client2007e-dev' "$dockerfile" || {
+            echo "::error file=$dockerfile::c-client development package missing"
+            exit 1
+          }
+
+          if grep -Fq 'docker-php-ext-configure imap' "$dockerfile"; then
+            echo "::error file=$dockerfile::Legacy IMAP configure command remains"
+            exit 1
+          fi
+
+          grep -Eq '^[[:space:]]*imap[[:space:]]*\\$' "$dockerfile" || {
+            echo "::error file=$dockerfile::PECL IMAP entry missing"
+            exit 1
+          }
+
+          echo ">>> Showing relevant lines"
+          grep -nE \
+            'FROM|packages\.sury|libmagickcore|libc-client|imap|smbclient' \
+            "$dockerfile"
+
+          echo "OK: Nextcloud files patched"
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and push latest
         id: docker_build_latest
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           push: true
           tags: devopsansiblede/nextcloud:latest
@@ -86,23 +201,38 @@ jobs:
       - name: Image digest for latest image
         run: echo ${{ steps.docker_build_latest.outputs.digest }}
 
-      - name: Build preparing full image
+      - name: Build preparing full image locally
         id: docker_build_prepare_full
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
-          push: true
+          push: false
           tags: devopsansiblede/nextcloud:tmp
           no-cache: true
           context: ./official/.examples/dockerfiles/full/apache/
           file: ./official/.examples/dockerfiles/full/apache/Dockerfile
           platforms: linux/amd64,linux/arm64
+          outputs: type=oci,dest=${{ runner.temp }}/nextcloud-tmp.tar
+
+      - name: Extract preparing image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          layout="${{ runner.temp }}/nextcloud-tmp"
+
+          rm -rf "$layout"
+          mkdir -p "$layout"
+          tar -xf "${{ runner.temp }}/nextcloud-tmp.tar" -C "$layout"
+
+          test -f "$layout/oci-layout"
+          test -f "$layout/index.json"
 
       - name: Image digest for full preparing image
         run: echo ${{ steps.docker_build_prepare_full.outputs.digest }}
 
       - name: Build and push full
         id: docker_build_full
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           push: true
           tags: devopsansiblede/nextcloud:full
@@ -110,9 +240,11 @@ jobs:
           context: ./nextcloud/
           file: ./nextcloud/Dockerfile
           platforms: linux/amd64,linux/arm64
+          build-contexts: |
+            devopsansiblede/nextcloud:tmp=oci-layout://${{ runner.temp }}/nextcloud-tmp@${{ steps.docker_build_prepare_full.outputs.digest }}
           build-args: |
-            "IMAGE=devopsansiblede/nextcloud"
-            "VERSION=tmp"
+            IMAGE=devopsansiblede/nextcloud
+            VERSION=tmp
 
       - name: Image digest for full image
         run: echo ${{ steps.docker_build_full.outputs.digest }}
@@ -127,5 +259,3 @@ jobs:
           commit_user_name: GitHub Actions
           commit_user_email: dev@macwinnie.me
           repository: ./nextcloud/
-
-...
