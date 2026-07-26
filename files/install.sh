@@ -34,3 +34,11 @@ else
 fi
 
 chmod a+x /usr/local/bin/entrypoint
+
+cat <<'EOF' > /usr/local/etc/php/conf.d/nextcloud.ini
+memory_limit=${PHP_MEMORY_LIMIT}
+upload_max_filesize=${PHP_UPLOAD_LIMIT}
+post_max_size=${PHP_UPLOAD_LIMIT}
+max_execution_time=${PHP_MAX_UPLOAD_TIME:-3600}
+max_input_time=${PHP_MAX_UPLOAD_TIME:-3600}
+EOF
